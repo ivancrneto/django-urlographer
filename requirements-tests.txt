@@ -1,7 +1,8 @@
 fabric
-mox>=0.5.3
+pymox
 django-test-utilities>=0.5
 model-mommy==1.2.6
 nose
 django-nose
 south
+ipdb
