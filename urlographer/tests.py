@@ -14,6 +14,7 @@
 
 
 import mox
+import six
 
 from collections import OrderedDict
 
@@ -85,7 +86,7 @@ class ContentMapTest(TestCase):
         content_map = models.ContentMap(
             view='urlographer.views.route', options={'article_id': 3})
         self.assertEqual(
-            unicode(content_map),
+            six.text_type(content_map),
             "urlographer.views.route(**{'article_id': 3})")
 
 
@@ -110,7 +111,8 @@ class URLMapTest(TestCase):
         self.assertEqual(self.url.protocol(), 'https')
 
     def test_unicode(self):
-        self.assertEqual(unicode(self.url), u'http://example.com/test_path')
+        self.assertEqual(
+            six.text_type(self.url), u'http://example.com/test_path')
 
     def test_get_absolute_url(self):
         self.assertEqual(self.url.get_absolute_url(), '/test_path')
@@ -122,7 +124,8 @@ class URLMapTest(TestCase):
 
     def test_https_unicode(self):
         self.url.force_secure = True
-        self.assertEqual(unicode(self.url), u'https://example.com/test_path')
+        self.assertEqual(
+            six.text_type(self.url), u'https://example.com/test_path')
 
     def test_set_hexdigest(self):
         self.assertFalse(self.url.hexdigest)
@@ -138,7 +141,7 @@ class URLMapTest(TestCase):
         with self.assertRaises(ValueError) as context:
             self.url.cache_key()
         self.assertEqual(
-            context.exception.message, 'URLMap has unset hexdigest')
+            context.exception.args[0], 'URLMap has unset hexdigest')
 
     def test_save(self):
         self.site.save()
@@ -361,7 +364,9 @@ class RouteTest(TestCase):
             force_secure=False)
         response = views.route(self.factory.get('/test'))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
 
     def test_content_map_view_function(self):
         content_map = models.ContentMap(
@@ -374,7 +379,9 @@ class RouteTest(TestCase):
         request = self.factory.get('/test')
         response = views.route(request)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
         self.assertEqual(request.urlmap, urlmap)
 
     def test_force_secure_wo_request_secure(self):
@@ -392,14 +399,17 @@ class RouteTest(TestCase):
         # Calls
         request.is_secure().AndReturn(False)
         views.get_redirect_url_with_query_string(
-            request, unicode(urlmap)).AndReturn(unicode(urlmap) + '?ok=true')
+            request,
+            six.text_type(urlmap)).AndReturn(
+                six.text_type(urlmap) + '?ok=true')
 
         self.mock.ReplayAll()
         response = views.route(request)
         self.mock.VerifyAll()
 
         self.assertEqual(response.status_code, 301)
-        self.assertEqual(response['Location'], unicode(urlmap) + '?ok=true')
+        self.assertEqual(
+            response['Location'], six.text_type(urlmap) + '?ok=true')
         self.assertEqual(request.urlmap, urlmap)
 
     def test_force_secure_w_request_secure(self):
@@ -422,7 +432,9 @@ class RouteTest(TestCase):
         self.mock.VerifyAll()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
         self.assertEqual(request.urlmap, urlmap)
 
     def test_not_force_secure_w_request_secure(self):
@@ -443,7 +455,9 @@ class RouteTest(TestCase):
         self.mock.VerifyAll()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
         self.assertEqual(request.urlmap, urlmap)
 
     def test_not_force_secure_wo_request_secure(self):
@@ -464,7 +478,9 @@ class RouteTest(TestCase):
         self.mock.VerifyAll()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
         self.assertEqual(request.urlmap, urlmap)
 
     def test_force_cache_invalidation(self):
@@ -584,7 +600,9 @@ class RouteTest(TestCase):
         self.mock.ReplayAll()
         response = views.route(self.factory.get('/test'))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
 
     def test_content_map_view_function_newrelic(self):
         self.mock.StubOutWithMock(views, 'newrelic')
@@ -603,7 +621,9 @@ class RouteTest(TestCase):
         self.mock.ReplayAll()
         response = views.route(request)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(
+            response.content,
+            six.text_type('test value=testing 1 2 3').encode('utf-8'))
         self.assertEqual(request.urlmap, urlmap)
 
 
@@ -709,8 +729,9 @@ class CustomSitemapTest(TestCase):
         urls = self.sitemap.get_urls()
         self.mock.VerifyAll()
 
-        self.assertItemsEqual([unicode(urlmap1), unicode(urlmap2)],
-                              [u['location'] for u in urls])
+        self.assertSequenceEqual(
+            [six.text_type(urlmap1), six.text_type(urlmap2)],
+            [u['location'] for u in urls])
 
 
 class SitemapTest(TestCase):
@@ -724,11 +745,16 @@ class SitemapTest(TestCase):
         self.mock.StubOutWithMock(views.cache, 'get')
         self.mock.StubOutWithMock(views.cache, 'set')
         self.site = Site.objects.get_current()
-        self.cache_key = '%s%s_sitemap' % (
+        self.cache_key = '{}{}_sitemap'.format(
             settings.URLOGRAPHER_CACHE_PREFIX, self.site)
         self.request = self.factory.get('/sitemap.xml')
         self.mock_contrib_sitemap_response = self.mock.CreateMockAnything()
-        self.mock_contrib_sitemap_response.content = '<mock>Sitemap</mock>'
+
+        if six.PY2:
+            self.mock_contrib_sitemap_response.content = '<mock>Sitemap</mock>'
+        elif six.PY3:
+            self.mock_contrib_sitemap_response.content = (
+                b'<mock>Sitemap</mock>')
 
     def tearDown(self):
         self.mock.UnsetStubs()

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import six
 
 from django.conf import settings
 from django.core.urlresolvers import get_mod_func
@@ -40,10 +41,13 @@ def force_ascii(s):
     """
     Eliminate all non-ASCII characters, ignoring errors
     """
-    if isinstance(s, unicode):
-        return s.encode('ascii', 'ignore')
+    if isinstance(s, six.text_type):
+        if six.PY2:
+            return s.encode('ascii', 'ignore')
+        elif six.PY3:
+            return ''.join([i for i in s if ord(i) < 128])
     else:
-        return unicode(s, 'ascii', errors='ignore')
+        return six.text_type(s, 'ascii', errors='ignore')
 
 
 def canonicalize_path(path):
@@ -77,7 +81,8 @@ def get_view(lookup_view):
     Uses similar logic to django.urlresolvers.get_callable, but always raises
     on failures and supports class based views.
     """
-    lookup_view = lookup_view.encode('ascii')
+    if six.PY2:
+        lookup_view = lookup_view.encode('ascii')
     mod_name, func_or_class_name = get_mod_func(lookup_view)
     assert func_or_class_name != ''
     view = getattr(import_module(mod_name), func_or_class_name)

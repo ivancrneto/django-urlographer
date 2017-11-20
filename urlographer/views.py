@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import six
 
 from django.conf import settings
 from django.contrib.sitemaps.views import sitemap as contrib_sitemap
@@ -89,11 +90,12 @@ def route(request):
     request.urlmap = url
 
     if url.force_secure and not request.is_secure():
-        url_to = get_redirect_url_with_query_string(request, unicode(url))
+        url_to = get_redirect_url_with_query_string(
+            request, six.text_type(url))
         response = HttpResponsePermanentRedirect(url_to)
     elif url.status_code == 200:
         if request.path != canonicalized:
-            response = HttpResponsePermanentRedirect(unicode(url))
+            response = HttpResponsePermanentRedirect(six.text_type(url))
         else:
             view = get_view(url.content_map.view)
             options = url.content_map.options
@@ -112,9 +114,9 @@ def route(request):
                 response = view(request, **options)
 
     elif url.status_code == 301:
-        response = HttpResponsePermanentRedirect(unicode(url.redirect))
+        response = HttpResponsePermanentRedirect(six.text_type(url.redirect))
     elif url.status_code == 302:
-        response = HttpResponseRedirect(unicode(url.redirect))
+        response = HttpResponseRedirect(six.text_type(url.redirect))
     elif url.status_code == 404:
         if should_append_slash(request):
             response = HttpResponsePermanentRedirect(request.path_info + '/')
@@ -127,7 +129,7 @@ def route(request):
     if handler:
         if callable(handler) or hasattr(handler, 'as_view'):
             view = handler
-        elif isinstance(handler, basestring):
+        elif isinstance(handler, six.string_types):
             view = get_view(handler)
         else:
             raise ImproperlyConfigured(
@@ -156,7 +158,7 @@ class CustomSitemap(GenericSitemap):
     def get_urls(self, *args, **kwargs):
         urls = super(CustomSitemap, self).get_urls(*args, **kwargs)
         for url in urls:
-            url['location'] = unicode(url['item'])
+            url['location'] = six.text_type(url['item'])
         return urls
 
 

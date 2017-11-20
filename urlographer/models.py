@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import six
 
 from hashlib import md5
 
@@ -18,6 +19,7 @@ from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.utils.encoding import python_2_unicode_compatible
 from django.db import models
 from django_extensions.db.fields.json import JSONField
 from django_extensions.db.models import TimeStampedModel
@@ -32,6 +34,7 @@ settings.URLOGRAPHER_CACHE_PREFIX = getattr(
     settings, 'URLOGRAPHER_CACHE_PREFIX', 'urlographer:')
 
 
+@python_2_unicode_compatible
 class ContentMap(TimeStampedModel):
     """
     A ContentMap is used by an :class:`~urlographer.models.URLMap` to refer
@@ -49,6 +52,9 @@ class ContentMap(TimeStampedModel):
     options = JSONField(blank=True)
 
     def __unicode__(self):
+        return self.__str__()
+
+    def __str__(self):
         return '%s(**%r)' % (self.view, self.options)
 
     def clean(self):
@@ -70,7 +76,10 @@ class ContentMap(TimeStampedModel):
         """
 
         self.full_clean()
-        super(ContentMap, self).save(*args, **options)
+        if six.PY2:
+            super(ContentMap, self).save(*args, **options)
+        elif six.PY3:
+            super().save(*args, **options)
         for urlmap in self.urlmap_set.all():
             cache.set(urlmap.cache_key(), None, 5)
 
@@ -100,6 +109,7 @@ class URLMapManager(models.Manager):
         return url
 
 
+@python_2_unicode_compatible
 class URLMap(TimeStampedModel):
     """
     This model is used to map a URL to one of the following:
@@ -138,6 +148,9 @@ class URLMap(TimeStampedModel):
             return 'http'
 
     def __unicode__(self):
+        return self.__str__()
+
+    def __str__(self):
         return self.protocol() + '://' + self.site.domain + self.path
 
     def get_absolute_url(self):
@@ -148,7 +161,7 @@ class URLMap(TimeStampedModel):
         if self.site == Site.objects.get_current():
             return self.path
         else:
-            return unicode(self)
+            return six.text_type(self)
 
     def cache_key(self):
         """
@@ -161,11 +174,16 @@ class URLMap(TimeStampedModel):
 
     def set_hexdigest(self):
         """MD5 hash the site and path and save to the *hexdigest* field"""
-        self.hexdigest = md5(str(self.site.id) + self.path).hexdigest()
+        self.hexdigest = md5(
+            '{0}{1}'.format(self.site.id, self.path).encode('utf-8')
+        ).hexdigest()
 
     def delete(self, *args, **options):
         """delete from DB and cache"""
-        super(URLMap, self).delete(*args, **options)
+        if six.PY2:
+            super(URLMap, self).delete(*args, **options)
+        elif six.PY3:
+            super().delete(*args, **options)
         cache.delete(self.cache_key())
 
     def clean_fields(self, *args, **kwargs):
@@ -177,8 +195,11 @@ class URLMap(TimeStampedModel):
         #. No 200 *status_code* with a null *content_map*
         """
         try:
-            super(URLMap, self).clean_fields(*args, **kwargs)
-        except ValidationError, e:
+            if six.PY2:
+                super(URLMap, self).clean_fields(*args, **kwargs)
+            elif six.PY3:
+                super().clean_fields(*args, **kwargs)
+        except ValidationError as e:
             errors = e.message_dict
         else:
             errors = {}
@@ -209,7 +230,10 @@ class URLMap(TimeStampedModel):
         removed.
         """
         self.full_clean()
-        super(URLMap, self).save(*args, **options)
+        if six.PY2:
+            super(URLMap, self).save(*args, **options)
+        elif six.PY3:
+            super().save(*args, **options)
         # accessing foreignkeys before caching allows us to cache instances of
         # the models being referred to together with the object we're caching
         self.site
