@@ -5,4 +5,4 @@ model-mommy==1.2.6
 nose
 django-nose
 south
-ipdb
+tox==2.6.0

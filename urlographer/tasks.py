@@ -8,18 +8,8 @@ from django.contrib.admin.models import (
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
-from django.test.client import RequestFactory
 
 from urlographer.models import URLMap
-from urlographer.views import sitemap
-
-
-class UpdateSitemapCacheTask(Task):
-
-    def run(self):
-        factory = RequestFactory()
-        request = factory.get('/sitemap.xml')
-        sitemap(request, invalidate_cache=True)
 
 
 class FixRedirectLoopsTask(Task):

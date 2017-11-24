@@ -16,11 +16,14 @@ import six
 from hashlib import md5
 
 from django.conf import settings
+from django.contrib.admin.models import LogEntry
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.sites.models import Site
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.utils.encoding import python_2_unicode_compatible
 from django.db import models
+from django.utils.encoding import smart_text
 from django_extensions.db.fields.json import JSONField
 from django_extensions.db.models import TimeStampedModel
 
@@ -241,3 +244,32 @@ class URLMap(TimeStampedModel):
         self.redirect
         cache.set(
             self.cache_key(), self, timeout=settings.URLOGRAPHER_CACHE_TIMEOUT)
+
+    def get_amp_equivalent(self):
+        """Return AMP equivalent URLMap. For path `/path/` the AMP equivalent
+        always is `/amp/path`. """
+        try:
+            amp_path = '/amp{0}'.format(self.path)
+            return URLMap.objects.get(path=amp_path)
+        except:
+            return None
+
+    def update_as_main_urlmap(self, user, main_urlmap):
+        """Update AMP URLMap's status_code to reflect that of
+        main, non-AMP, URLMap"""
+        self.status_code = main_urlmap.status_code
+        if main_urlmap.status_code in (301, 302):
+            self.redirect = main_urlmap.redirect
+        self.save()
+        content_type_id = ContentType.objects.get_for_model(self).pk
+        LogEntry.objects.create(**{
+            'user_id': user.id,
+            'content_type_id': content_type_id,
+            'object_id': smart_text(self.id),
+            'object_repr': str(self)[:200],
+            'action_flag': 2,  # django.contrib.admin.models.CHANGE
+            'change_message': (
+                'Updated to reflect main URLMap "{0}" changed to new status '
+                'code "{1}".'.format(main_urlmap.path, main_urlmap.status_code)
+            )
+        })

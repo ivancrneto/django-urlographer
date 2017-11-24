@@ -41,6 +41,15 @@ class URLMapAdminForm(forms.ModelForm):
 
     site = SiteModelChoiceField(queryset=Site.objects.all())
 
+    def save(self, commit=True):
+        """Override to update equivalent AMP URLMap when necessary."""
+        urlmap = super(URLMapAdminForm, self).save(commit)  # saved urlmap
+        if urlmap.status_code in (301, 302, 410):
+            amp_urlmap = urlmap.get_amp_equivalent()
+            if amp_urlmap and amp_urlmap.status_code == 200:
+                amp_urlmap.update_as_main_urlmap(self.current_user, urlmap)
+        return urlmap
+
     class Meta:
         model = URLMap
         fields = '__all__'
@@ -60,6 +69,11 @@ class URLMapAdmin(admin.ModelAdmin):
             return super(URLMapAdmin, self).queryset(request).extra(select={
                 'redirects_count': SQL_COUNT_REDIRECTS
             })
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super(URLMapAdmin, self).get_form(request, obj, **kwargs)
+        form.current_user = request.user
+        return form
 
     def redirects_count(self, obj):
         return obj.redirects_count

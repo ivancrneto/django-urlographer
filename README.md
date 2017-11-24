@@ -52,13 +52,20 @@ Run this command:
 tox -e django19 -- -s
 ```
 
-To run coverage locally
+To run tests locally
 --
 
 ```
-coverage report -m
+fab test
 ```
 
+To run coverage locally AND report it
+--
+
+```
+fab test_coverage
+coverage report -m
+```
 
 To install in current virtualenv
 --
