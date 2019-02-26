@@ -21,6 +21,7 @@ from collections import OrderedDict
 from model_mommy import mommy, recipe
 
 from django.conf import settings
+from django.contrib.admin import site as admin_site
 from django.contrib.admin.models import (
     CHANGE,
     LogEntry
@@ -29,7 +30,7 @@ from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sites.models import Site
 from django.core.exceptions import ImproperlyConfigured, ValidationError
-from django.http import Http404, HttpRequest
+from django.http import Http404
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
 
@@ -224,6 +225,67 @@ class URLMapTest(TestCase):
             ValidationError,
             u'Url map with this Hexdigest already exists.',
             self.url.save)
+
+    def test_get_amp_equivalent_when_it_does_not_exist(self):
+        self.assertIsNone(self.url.get_amp_equivalent())
+
+    def test_get_amp_equivalent_when_it_does_exist(self):
+        amp_url = mommy.make(
+            'urlographer.URLMap', path='/amp/test_path', status_code=200,
+            content_map__view='django.views.generic.base.View')
+        self.assertEqual(self.url.get_amp_equivalent(), amp_url)
+
+    def test_update_as_main_urlmap_301_302(self):
+        redirect_to = mommy.make(
+            'urlographer.URLMap', path='/test/redirect-target/',
+            status_code=200,
+            content_map__view='django.views.generic.base.View')
+        main_url = mommy.make(
+            'urlographer.URLMap', path='/test/', status_code=301,
+            redirect=redirect_to)
+        amp_url = mommy.make(
+            'urlographer.URLMap', path='/amp/test/', status_code=200,
+            content_map__view='django.views.generic.base.View')
+        user = mommy.make('auth.User')
+
+        amp_url.update_as_main_urlmap(user, main_url)
+
+        self.assertEqual(amp_url.status_code, main_url.status_code)
+        self.assertEqual(amp_url.redirect, main_url.redirect)
+        self.assertEqual(amp_url.on_sitemap, main_url.on_sitemap)
+
+        content_type_id = ContentType.objects.get_for_model(amp_url).pk
+        logentry = LogEntry.objects.get(object_id=amp_url.id)
+        self.assertEqual(logentry.user, user)
+        self.assertEqual(logentry.content_type_id, content_type_id)
+        self.assertEqual(logentry.action_flag, CHANGE)
+        self.assertEqual(
+            logentry.change_message,
+            'Updated to reflect main URLMap "/test/" changed to new status '
+            'code "301".')
+
+    def test_update_as_main_urlmap_410(self):
+        main_url = mommy.make(
+            'urlographer.URLMap', path='/test/', status_code=410)
+        amp_url = mommy.make(
+            'urlographer.URLMap', path='/amp/test/', status_code=200,
+            content_map__view='django.views.generic.base.View')
+        user = mommy.make('auth.User')
+
+        amp_url.update_as_main_urlmap(user, main_url)
+
+        self.assertEqual(amp_url.status_code, main_url.status_code)
+        self.assertEqual(amp_url.on_sitemap, main_url.on_sitemap)
+
+        content_type_id = ContentType.objects.get_for_model(amp_url).pk
+        logentry = LogEntry.objects.get(object_id=amp_url.id)
+        self.assertEqual(logentry.user, user)
+        self.assertEqual(logentry.content_type_id, content_type_id)
+        self.assertEqual(logentry.action_flag, CHANGE)
+        self.assertEqual(
+            logentry.change_message,
+            'Updated to reflect main URLMap "/test/" changed to new status '
+            'code "410".')
 
 
 class URLMapManagerTest(TestCase):
@@ -626,6 +688,30 @@ class RouteTest(TestCase):
             six.text_type('test value=testing 1 2 3').encode('utf-8'))
         self.assertEqual(request.urlmap, urlmap)
 
+    def test_signal_called_on_urlmap_bound_to_request(self):
+        content_map = models.ContentMap(
+            view='urlographer.sample_views.sample_view')
+        content_map.options['test_val'] = 'testing 1 2 3'
+        content_map.save()
+        urlmap = models.URLMap.objects.create(
+            site=self.site, path='/test', content_map=content_map,
+            force_secure=False)
+        request = self.factory.get('/test')
+
+        # Mocks:
+        self.mock.StubOutWithMock(
+            views.urlmap_bound_to_request, 'send')
+
+        # Expected calls:
+        views.urlmap_bound_to_request.send(sender=None, request=request)
+
+        self.mock.ReplayAll()
+        response = views.route(request)
+        self.mock.VerifyAll()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(request.urlmap, urlmap)
+
 
 class GetRedirectUrlWithQueryStringTest(TestCase):
 
@@ -839,21 +925,6 @@ class SitemapTest(TestCase):
             response.content, self.mock_contrib_sitemap_response.content)
 
 
-class UpdateSitemapCacheTaskTest(TestCase):
-    def setUp(self):
-        self.mock = mox.Mox()
-
-    def tearDown(self):
-        self.mock.UnsetStubs()
-
-    def test_update_sitemap_cache(self):
-        self.mock.StubOutWithMock(tasks, 'sitemap')
-        tasks.sitemap(mox.IsA(HttpRequest), invalidate_cache=True)
-        self.mock.ReplayAll()
-        tasks.UpdateSitemapCacheTask().run()
-        self.mock.VerifyAll()
-
-
 class FixRedirectLoopsTaskTest(TestCase):
 
     def setUp(self):
@@ -1033,7 +1104,7 @@ class URLMapAdminTest(TestCase):
         self.urlmap = models.URLMap.objects.create(
             site=Site.objects.get(id=1), path='/test_path',
             content_map=content_map)
-        self.admin_instance = admin.URLMapAdmin(models.URLMap, None)
+        self.admin_instance = admin.URLMapAdmin(models.URLMap, admin_site)
         self.request = RequestFactory().get('')
 
     def test_get_queryset_without_redirects(self):
@@ -1056,6 +1127,144 @@ class URLMapAdminTest(TestCase):
         urlmap = self.admin_instance.get_queryset(self.request)[0]
         self.assertEqual(
             self.admin_instance.redirects_count(urlmap), 0)
+
+    def test_get_form_sets_user(self):
+        self.request.user = mommy.make('auth.User')
+        form = self.admin_instance.get_form(self.request, obj=self.urlmap)
+        self.assertEqual(form.current_user, self.request.user)
+
+
+class URLMapAdminFormTest(TestCase):
+
+    def setUp(self):
+        self.content_map = models.ContentMap.objects.create(
+            view='urlographer.views.route')
+        self.urlmap_recipe = recipe.Recipe(
+            'urlographer.URLMap', site=Site.objects.get(id=1),
+            path='/test/', content_map=self.content_map)
+        self.admin_instance = admin.URLMapAdmin(models.URLMap, admin_site)
+        self.post_data = {}
+        self.request = RequestFactory().post('')
+        self.request.user = mommy.make('auth.User')
+        self.mock = mox.Mox()
+
+    def tearDown(self):
+        self.mock.UnsetStubs()
+
+    @property
+    def sample_form_data(self):
+        return {
+            'site': Site.objects.get(id=1).id,
+            'path': '/test/',
+            'force_secure': True,
+            'status_code': 999,  # modify this on saved_obj instance
+            'canonical': None,
+            'redirect': None,
+            'content_map': self.content_map.id,
+            'on_sitemap': False,
+        }
+
+    def test_save_urlmap_new_status_code_no_impact_on_amp_urlmap(self):
+        urlmap = self.urlmap_recipe.make(
+            status_code=200,
+            content_map__view='django.views.generic.base.View')
+
+        saved_obj = self.mock.CreateMockAnything()
+        saved_obj.status_code = 200
+        self.mock.StubOutWithMock(admin.forms.ModelForm, 'save')
+        self.mock.StubOutWithMock(saved_obj, 'get_amp_equivalent')
+
+        # Expected calls:
+        admin.forms.ModelForm.save(True).AndReturn(saved_obj)
+
+        form = admin.URLMapAdminForm(self.sample_form_data, instance=urlmap)
+
+        self.mock.ReplayAll()
+        instance = form.save()
+        self.mock.VerifyAll()
+
+        self.assertEqual(instance, saved_obj)
+
+    def test_save_urlmap_new_status_code_impacts_but_no_amp_urlmap(self):
+        redirect_to = self.urlmap_recipe.make(
+            path='/test/redirect-target/', status_code=200,
+            content_map__view='django.views.generic.base.View')
+        urlmap = self.urlmap_recipe.make(
+            status_code=301, redirect=redirect_to)
+
+        saved_obj = self.mock.CreateMockAnything()
+        saved_obj.status_code = 301
+        self.mock.StubOutWithMock(admin.forms.ModelForm, 'save')
+        self.mock.StubOutWithMock(saved_obj, 'get_amp_equivalent')
+
+        # Expected calls:
+        admin.forms.ModelForm.save(True).AndReturn(saved_obj)
+        saved_obj.get_amp_equivalent().AndReturn(None)
+
+        form = admin.URLMapAdminForm(self.sample_form_data, instance=urlmap)
+
+        self.mock.ReplayAll()
+        instance = form.save()
+        self.mock.VerifyAll()
+
+        self.assertEqual(instance, saved_obj)
+
+    def test_save_urlmap_new_status_code_impacts_but_ampurl_already_301(self):
+        redirect_to = self.urlmap_recipe.make(
+            path='/test/redirect-target/', status_code=200,
+            content_map__view='django.views.generic.base.View')
+        urlmap = self.urlmap_recipe.make(
+            status_code=301, redirect=redirect_to)
+        amp_urlmap = self.urlmap_recipe.make(
+            path='/amp/test/', status_code=301, redirect=redirect_to)
+
+        saved_obj = self.mock.CreateMockAnything()
+        saved_obj.status_code = 301
+        self.mock.StubOutWithMock(admin.forms.ModelForm, 'save')
+        self.mock.StubOutWithMock(saved_obj, 'get_amp_equivalent')
+        self.mock.StubOutWithMock(amp_urlmap, 'update_as_main_urlmap')
+
+        # Expected calls:
+        admin.forms.ModelForm.save(True).AndReturn(saved_obj)
+        saved_obj.get_amp_equivalent().AndReturn(amp_urlmap)
+
+        form = admin.URLMapAdminForm(self.sample_form_data, instance=urlmap)
+
+        self.mock.ReplayAll()
+        instance = form.save()
+        self.mock.VerifyAll()
+
+        self.assertEqual(instance, saved_obj)
+
+    def test_save_urlmap_new_status_code_should_update_amp_urlmap(self):
+        redirect_to = self.urlmap_recipe.make(
+            path='/test/redirect-target/', status_code=200,
+            content_map__view='django.views.generic.base.View')
+        urlmap = self.urlmap_recipe.make(
+            status_code=301, redirect=redirect_to)
+        amp_urlmap = self.urlmap_recipe.make(
+            path='/amp/test/', status_code=200,
+            content_map__view='django.views.generic.base.View')
+
+        saved_obj = self.mock.CreateMockAnything()
+        saved_obj.status_code = 301
+        self.mock.StubOutWithMock(admin.forms.ModelForm, 'save')
+        self.mock.StubOutWithMock(saved_obj, 'get_amp_equivalent')
+        self.mock.StubOutWithMock(amp_urlmap, 'update_as_main_urlmap')
+
+        # Expected calls:
+        admin.forms.ModelForm.save(True).AndReturn(saved_obj)
+        saved_obj.get_amp_equivalent().AndReturn(amp_urlmap)
+        amp_urlmap.update_as_main_urlmap(self.request.user, saved_obj)
+
+        form = admin.URLMapAdminForm(self.sample_form_data, instance=urlmap)
+        form.current_user = self.request.user
+
+        self.mock.ReplayAll()
+        instance = form.save()
+        self.mock.VerifyAll()
+
+        self.assertEqual(instance, saved_obj)
 
 
 class ShouldAppendSlashTest(TestCase):

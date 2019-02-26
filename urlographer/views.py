@@ -38,6 +38,7 @@ except:
     newrelic = False
 
 from .models import URLMap
+from .signals import urlmap_bound_to_request
 from .utils import (
     canonicalize_path,
     force_cache_invalidation,
@@ -88,6 +89,7 @@ def route(request):
                      force_secure=False)
 
     request.urlmap = url
+    urlmap_bound_to_request.send(sender=None, request=request)
 
     if url.force_secure and not request.is_secure():
         url_to = get_redirect_url_with_query_string(

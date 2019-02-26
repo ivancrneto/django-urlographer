@@ -6,3 +6,4 @@ nose
 django-nose
 south
 ipdb
+tox==2.6.0
