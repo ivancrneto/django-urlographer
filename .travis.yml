@@ -1,8 +1,8 @@
 language: python
 env:
-    - TOXENV=django17
-    - TOXENV=django18
     - TOXENV=django19
+    - TOXENV=django110
+    - TOXENV=django111
     - TOXENV=coverage
 install:
     - pip install tox

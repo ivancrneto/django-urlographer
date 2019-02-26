@@ -668,6 +668,30 @@ class RouteTest(TestCase):
         self.assertEqual(response.content, 'test value=testing 1 2 3')
         self.assertEqual(request.urlmap, urlmap)
 
+    def test_signal_called_on_urlmap_bound_to_request(self):
+        content_map = models.ContentMap(
+            view='urlographer.sample_views.sample_view')
+        content_map.options['test_val'] = 'testing 1 2 3'
+        content_map.save()
+        urlmap = models.URLMap.objects.create(
+            site=self.site, path='/test', content_map=content_map,
+            force_secure=False)
+        request = self.factory.get('/test')
+
+        # Mocks:
+        self.mock.StubOutWithMock(
+            views.urlmap_bound_to_request, 'send')
+
+        # Expected calls:
+        views.urlmap_bound_to_request.send(sender=None, request=request)
+
+        self.mock.ReplayAll()
+        response = views.route(request)
+        self.mock.VerifyAll()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, 'test value=testing 1 2 3')
+        self.assertEqual(request.urlmap, urlmap)
+
 
 class GetRedirectUrlWithQueryStringTest(TestCase):
 
