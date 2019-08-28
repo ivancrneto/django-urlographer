@@ -79,10 +79,7 @@ class ContentMap(TimeStampedModel):
         """
 
         self.full_clean()
-        if six.PY2:
-            super(ContentMap, self).save(*args, **options)
-        elif six.PY3:
-            super().save(*args, **options)
+        super(ContentMap, self).save(*args, **options)
         for urlmap in self.urlmap_set.all():
             cache.set(urlmap.cache_key(), None, 5)
 
@@ -183,10 +180,7 @@ class URLMap(TimeStampedModel):
 
     def delete(self, *args, **options):
         """delete from DB and cache"""
-        if six.PY2:
-            super(URLMap, self).delete(*args, **options)
-        elif six.PY3:
-            super().delete(*args, **options)
+        super(URLMap, self).delete(*args, **options)
         cache.delete(self.cache_key())
 
     def clean_fields(self, *args, **kwargs):
@@ -198,10 +192,7 @@ class URLMap(TimeStampedModel):
         #. No 200 *status_code* with a null *content_map*
         """
         try:
-            if six.PY2:
-                super(URLMap, self).clean_fields(*args, **kwargs)
-            elif six.PY3:
-                super().clean_fields(*args, **kwargs)
+            super(URLMap, self).clean_fields(*args, **kwargs)
         except ValidationError as e:
             errors = e.message_dict
         else:
@@ -233,10 +224,7 @@ class URLMap(TimeStampedModel):
         removed.
         """
         self.full_clean()
-        if six.PY2:
-            super(URLMap, self).save(*args, **options)
-        elif six.PY3:
-            super().save(*args, **options)
+        super(URLMap, self).save(*args, **options)
         # accessing foreignkeys before caching allows us to cache instances of
         # the models being referred to together with the object we're caching
         self.site
